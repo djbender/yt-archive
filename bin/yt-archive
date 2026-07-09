@@ -4,6 +4,8 @@ set -euo pipefail
 PROG="$(basename "$0")"
 ARCHIVE_FILE="${YT_ARCHIVE_FILE:-archive.txt}"
 SUB_LANGS="${YT_ARCHIVE_SUB_LANGS:-en.*}"
+COOKIES_FROM_BROWSER="${YT_ARCHIVE_COOKIES_FROM_BROWSER-chrome}"
+COOKIES_FILE="${YT_ARCHIVE_COOKIES:-}"
 
 usage() {
   cat <<EOF
@@ -22,8 +24,13 @@ Options:
   -h, --help       Show this help.
 
 Environment:
-  YT_ARCHIVE_FILE       Path to the download-archive file (default: archive.txt)
-  YT_ARCHIVE_SUB_LANGS  Subtitle languages to embed (default: en.*)
+  YT_ARCHIVE_FILE                  Path to the download-archive file (default: archive.txt)
+  YT_ARCHIVE_SUB_LANGS              Subtitle languages to embed (default: en.*)
+  YT_ARCHIVE_COOKIES_FROM_BROWSER   Browser to read cookies from (default: chrome; also accepts
+                                     safari, firefox, etc). Set to empty to disable. Used to pass
+                                     YouTube's sign-in/bot verification.
+  YT_ARCHIVE_COOKIES                Path to a Netscape-format cookies.txt file (alternative to
+                                     YT_ARCHIVE_COOKIES_FROM_BROWSER, e.g. for headless use)
 
 Examples:
   $PROG @ChannelName
@@ -31,6 +38,8 @@ Examples:
   $PROG --size @ChannelName
   $PROG --confirm @ChannelName
   $PROG "https://www.youtube.com/@ChannelName/videos" --playlist-end 20
+  YT_ARCHIVE_COOKIES_FROM_BROWSER=safari $PROG @ChannelName
+  YT_ARCHIVE_COOKIES_FROM_BROWSER= $PROG @ChannelName  # disable cookie use
 EOF
 }
 
@@ -58,6 +67,14 @@ require_yt_dlp() {
   fi
 }
 
+cookie_args() {
+  local -n out="$1"
+  out=()
+  [[ -n "$COOKIES_FROM_BROWSER" ]] && out+=(--cookies-from-browser "$COOKIES_FROM_BROWSER")
+  [[ -n "$COOKIES_FILE" ]] && out+=(--cookies "$COOKIES_FILE")
+  return 0
+}
+
 human_size() {
   # bytes -> human-readable (base 1024), via awk for portability
   awk -v bytes="$1" 'BEGIN {
@@ -78,6 +95,8 @@ estimate_size() {
   require_yt_dlp
 
   local count=0 total=0 known=0 unknown=0 size
+  local cookies=()
+  cookie_args cookies
 
   while IFS= read -r size; do
     count=$((count + 1))
@@ -94,6 +113,7 @@ estimate_size() {
     -f "bv*+ba/b" \
     -O "%(filesize,filesize_approx)s" \
     -i \
+    "${cookies[@]+"${cookies[@]}"}" \
     "$@" \
     "$url")
 
@@ -117,6 +137,9 @@ download() {
   shift
   require_yt_dlp
 
+  local cookies=()
+  cookie_args cookies
+
   yt-dlp \
     -o "%(uploader)s/%(upload_date)s - %(title)s [%(id)s].%(ext)s" \
     --download-archive "$ARCHIVE_FILE" \
@@ -127,6 +150,7 @@ download() {
     --embed-subs \
     --sub-langs "$SUB_LANGS" \
     -i \
+    "${cookies[@]+"${cookies[@]}"}" \
     "$@" \
     "$url"
 }
