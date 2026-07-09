@@ -77,23 +77,29 @@ estimate_size() {
   shift
   require_yt_dlp
 
-  local tmp
-  tmp="$(mktemp)"
+  local count=0 total=0 known=0 unknown=0 size
 
-  yt-dlp \
+  while IFS= read -r size; do
+    count=$((count + 1))
+    if [[ "$size" == "NA" ]]; then
+      unknown=$((unknown + 1))
+    else
+      known=$((known + 1))
+      total=$((total + size))
+    fi
+    printf '\rScanning... %d video(s), ~%s so far' "$count" "$(human_size "$total")" >&2
+  done < <(yt-dlp \
     --skip-download \
     --download-archive "$ARCHIVE_FILE" \
     -f "bv*+ba/b" \
     -O "%(filesize,filesize_approx)s" \
     -i \
     "$@" \
-    "$url" > "$tmp"
+    "$url")
 
-  local total unknown known
-  total=$(awk '$0 != "NA" { sum += $0 } END { print sum + 0 }' "$tmp")
-  unknown=$(awk '$0 == "NA" { c++ } END { print c + 0 }' "$tmp")
-  known=$(awk '$0 != "NA" { c++ } END { print c + 0 }' "$tmp")
-  rm -f "$tmp"
+  if [[ "$count" -gt 0 ]]; then
+    printf '\n' >&2
+  fi
 
   echo "Estimated size: ~$(human_size "$total") across $known video(s) with known size"
   if [[ "$unknown" -gt 0 ]]; then
