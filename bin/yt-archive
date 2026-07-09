@@ -1,0 +1,165 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+PROG="$(basename "$0")"
+ARCHIVE_FILE="${YT_ARCHIVE_FILE:-archive.txt}"
+SUB_LANGS="${YT_ARCHIVE_SUB_LANGS:-en.*}"
+
+usage() {
+  cat <<EOF
+usage: $PROG [options] <channel-or-video-url> [extra yt-dlp args]
+
+Archive a YouTube channel/playlist/video with dated filenames, embedded
+metadata/thumbnail/subs (human-made only), and incremental re-runs via a
+download archive file.
+
+Options:
+  -s, --size       Estimate total download size without downloading anything.
+  -c, --confirm    Show the size estimate and prompt before downloading.
+  -h, --help       Show this help.
+
+Environment:
+  YT_ARCHIVE_FILE       Path to the download-archive file (default: archive.txt)
+  YT_ARCHIVE_SUB_LANGS  Subtitle languages to embed (default: en.*)
+
+Examples:
+  $PROG "https://www.youtube.com/@ChannelName/videos"
+  $PROG --size "https://www.youtube.com/@ChannelName/videos"
+  $PROG --confirm "https://www.youtube.com/@ChannelName/videos"
+  $PROG "https://www.youtube.com/@ChannelName/videos" --playlist-end 20
+EOF
+}
+
+require_yt_dlp() {
+  if ! command -v yt-dlp >/dev/null 2>&1; then
+    echo "$PROG: yt-dlp not found on PATH. Install it first (e.g. brew install yt-dlp)." >&2
+    exit 1
+  fi
+}
+
+human_size() {
+  # bytes -> human-readable (base 1024), via awk for portability
+  awk -v bytes="$1" 'BEGIN {
+    split("B KiB MiB GiB TiB", units, " ")
+    size = bytes
+    i = 1
+    while (size >= 1024 && i < 5) {
+      size /= 1024
+      i++
+    }
+    printf "%.2f %s", size, units[i]
+  }'
+}
+
+estimate_size() {
+  local url="$1"
+  shift
+  require_yt_dlp
+
+  local tmp
+  tmp="$(mktemp)"
+
+  yt-dlp \
+    --skip-download \
+    --download-archive "$ARCHIVE_FILE" \
+    -f "bv*+ba/b" \
+    -O "%(filesize,filesize_approx)s" \
+    -i \
+    "$@" \
+    "$url" > "$tmp"
+
+  local total unknown known
+  total=$(awk '$0 != "NA" { sum += $0 } END { print sum + 0 }' "$tmp")
+  unknown=$(awk '$0 == "NA" { c++ } END { print c + 0 }' "$tmp")
+  known=$(awk '$0 != "NA" { c++ } END { print c + 0 }' "$tmp")
+  rm -f "$tmp"
+
+  echo "Estimated size: ~$(human_size "$total") across $known video(s) with known size"
+  if [[ "$unknown" -gt 0 ]]; then
+    echo "Note: $unknown video(s) had no size metadata and are excluded from the total."
+  fi
+
+  # exported for --confirm to reuse without re-running yt-dlp
+  ESTIMATE_TOTAL="$total"
+  ESTIMATE_KNOWN="$known"
+  ESTIMATE_UNKNOWN="$unknown"
+}
+
+download() {
+  local url="$1"
+  shift
+  require_yt_dlp
+
+  yt-dlp \
+    -o "%(uploader)s/%(upload_date)s - %(title)s [%(id)s].%(ext)s" \
+    --download-archive "$ARCHIVE_FILE" \
+    -f "bv*+ba/b" \
+    --merge-output-format mp4 \
+    --embed-metadata \
+    --embed-thumbnail \
+    --embed-subs \
+    --sub-langs "$SUB_LANGS" \
+    -i \
+    "$@" \
+    "$url"
+}
+
+main() {
+  local mode="download"
+  local url=""
+  local extra_args=()
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -h|--help)
+        usage
+        exit 0
+        ;;
+      -s|--size)
+        mode="size"
+        shift
+        ;;
+      -c|--confirm)
+        mode="confirm"
+        shift
+        ;;
+      *)
+        if [[ -z "$url" ]]; then
+          url="$1"
+        else
+          extra_args+=("$1")
+        fi
+        shift
+        ;;
+    esac
+  done
+
+  if [[ -z "$url" ]]; then
+    usage >&2
+    exit 1
+  fi
+
+  case "$mode" in
+    size)
+      estimate_size "$url" "${extra_args[@]+"${extra_args[@]}"}"
+      ;;
+    confirm)
+      estimate_size "$url" "${extra_args[@]+"${extra_args[@]}"}"
+      read -r -p "Download ~$(human_size "$ESTIMATE_TOTAL") across $ESTIMATE_KNOWN video(s)? [y/N] " reply
+      case "$reply" in
+        [yY]|[yY][eE][sS])
+          download "$url" "${extra_args[@]+"${extra_args[@]}"}"
+          ;;
+        *)
+          echo "Aborted."
+          exit 1
+          ;;
+      esac
+      ;;
+    download)
+      download "$url" "${extra_args[@]+"${extra_args[@]}"}"
+      ;;
+  esac
+}
+
+main "$@"
