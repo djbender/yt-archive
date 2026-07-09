@@ -20,7 +20,16 @@ ln -s "$(pwd)/bin/yt-archive" ~/bin/yt-archive
 ## Usage
 
 ```sh
+yt-archive @ChannelName
+```
+
+A bare `@handle` expands to that channel's `/videos` tab. Any other
+yt-dlp-supported URL (a specific `/streams` or `/shorts` tab, a playlist, a
+single video) also works as-is:
+
+```sh
 yt-archive "https://www.youtube.com/@ChannelName/videos"
+yt-archive "https://www.youtube.com/@ChannelName/streams"
 ```
 
 Re-running the same command later only fetches new uploads — already

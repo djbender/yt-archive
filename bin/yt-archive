@@ -7,11 +7,14 @@ SUB_LANGS="${YT_ARCHIVE_SUB_LANGS:-en.*}"
 
 usage() {
   cat <<EOF
-usage: $PROG [options] <channel-or-video-url> [extra yt-dlp args]
+usage: $PROG [options] <channel-handle-or-url> [extra yt-dlp args]
 
 Archive a YouTube channel/playlist/video with dated filenames, embedded
 metadata/thumbnail/subs (human-made only), and incremental re-runs via a
 download archive file.
+
+Accepts a bare @handle (e.g. @ChannelName), which expands to that channel's
+/videos tab, or any full yt-dlp-supported URL.
 
 Options:
   -s, --size       Estimate total download size without downloading anything.
@@ -23,11 +26,29 @@ Environment:
   YT_ARCHIVE_SUB_LANGS  Subtitle languages to embed (default: en.*)
 
 Examples:
+  $PROG @ChannelName
   $PROG "https://www.youtube.com/@ChannelName/videos"
-  $PROG --size "https://www.youtube.com/@ChannelName/videos"
-  $PROG --confirm "https://www.youtube.com/@ChannelName/videos"
+  $PROG --size @ChannelName
+  $PROG --confirm @ChannelName
   $PROG "https://www.youtube.com/@ChannelName/videos" --playlist-end 20
 EOF
+}
+
+normalize_url() {
+  local input="$1"
+  case "$input" in
+    @*)
+      # bare handle, e.g. @dungeonchill or @dungeonchill/streams
+      if [[ "$input" == */* ]]; then
+        echo "https://www.youtube.com/$input"
+      else
+        echo "https://www.youtube.com/$input/videos"
+      fi
+      ;;
+    *)
+      echo "$input"
+      ;;
+  esac
 }
 
 require_yt_dlp() {
@@ -138,6 +159,8 @@ main() {
     usage >&2
     exit 1
   fi
+
+  url="$(normalize_url "$url")"
 
   case "$mode" in
     size)
