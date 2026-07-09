@@ -2,6 +2,7 @@
 set -euo pipefail
 
 PROG="$(basename "$0")"
+VERSION="1.2.0"
 ARCHIVE_FILE="${YT_ARCHIVE_FILE:-archive.txt}"
 SUB_LANGS="${YT_ARCHIVE_SUB_LANGS:-en.*}"
 COOKIES_FROM_BROWSER="${YT_ARCHIVE_COOKIES_FROM_BROWSER-chrome}"
@@ -21,6 +22,7 @@ Accepts a bare @handle (e.g. @ChannelName), which expands to that channel's
 Options:
   -s, --size       Estimate total download size without downloading anything.
   -c, --confirm    Show the size estimate and prompt before downloading.
+  -v, --version    Show version and exit.
   -h, --help       Show this help.
 
 Environment:
@@ -41,6 +43,10 @@ Examples:
   YT_ARCHIVE_COOKIES_FROM_BROWSER=safari $PROG @ChannelName
   YT_ARCHIVE_COOKIES_FROM_BROWSER= $PROG @ChannelName  # disable cookie use
 EOF
+}
+
+version() {
+  echo "$PROG $VERSION"
 }
 
 normalize_url() {
@@ -173,6 +179,10 @@ main() {
       -c|--confirm)
         mode="confirm"
         shift
+        ;;
+      -v|--version)
+        version
+        exit 0
         ;;
       *)
         if [[ -z "$url" ]]; then
